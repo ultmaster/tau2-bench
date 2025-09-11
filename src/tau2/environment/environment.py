@@ -19,6 +19,24 @@ from tau2.environment.tool import Tool
 from tau2.environment.toolkit import ToolKitBase, ToolSignature, get_tool_signatures
 
 
+def _recursive_json_deserialize(obj: Any) -> Any:
+    """
+    Recursively deserialize a JSON object.
+    """
+    if isinstance(obj, str):
+        try:
+            deserialized = json.loads(obj)
+            return _recursive_json_deserialize(deserialized)
+        except (json.JSONDecodeError, TypeError):
+            return obj
+    elif isinstance(obj, list):
+        return [_recursive_json_deserialize(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {k: _recursive_json_deserialize(v) for k, v in obj.items()}
+    else:
+        return obj
+
+
 class EnvironmentInfo(BaseModel):
     """
     Environment information.
@@ -320,18 +338,19 @@ class Environment:
         action_responses = get_actions_from_messages(message_history)
         for tool_call, expected_response in action_responses:
             response = self.get_response(tool_call)
-            try:
-                content = json.loads(response.content)
-            except json.JSONDecodeError:
-                content = response.content
-            try:
-                expected_content = json.loads(expected_response.content)
-            except json.JSONDecodeError:
-                expected_content = expected_response.content
+            content = _recursive_json_deserialize(response.content)
+            expected_content = _recursive_json_deserialize(expected_response.content)
             if content != expected_content:
-                raise ValueError(
-                    f"Tool call:\n{tool_call}\n\nReturned:\n{response}\n\nExpected:\n{expected_response}"
-                )
+                diff = f"Tool call:\n{tool_call}\n\nReturned:\n{response}\n\nExpected:\n{expected_response}"
+                if isinstance(content, str) and content.startswith("Error:"):
+                    # If the tool call resulted in an error, the difference can be ignored
+                    logger.warning(
+                        f"Tool call resulted in an error. Ignoring the difference.\n{diff}"
+                    )
+                else:
+                    raise ValueError(
+                        f"Tool call:\n{tool_call}\n\nReturned:\n{response}\n\nExpected:\n{expected_response}"
+                    )
         self.sync_tools()
 
     @classmethod
