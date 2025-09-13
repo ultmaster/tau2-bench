@@ -11,10 +11,13 @@ def convert_json_to_parquet():
     with open(input_file, "r") as f:
         data = json.load(f)
 
-    print(f"Loaded {len(data)} records from {input_file}")
+    # we use serialized now to avoid some null values got inserted and destroy the original semantics
+    serialized_data = [{"id": task["id"], "serialized": json.dumps(task)} for task in data]
+
+    print(f"Loaded {len(serialized_data)} records from {input_file}")
 
     # Convert to DataFrame
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(serialized_data)
 
     # Split into train and test (50/50)
     train_df, test_df = train_test_split(df, test_size=0.5, random_state=42)
@@ -27,8 +30,8 @@ def convert_json_to_parquet():
     os.makedirs(output_dir, exist_ok=True)
 
     # Save as parquet files
-    train_output = os.path.join(output_dir, "tasks_train.parquet")
-    test_output = os.path.join(output_dir, "tasks_test.parquet")
+    train_output = os.path.join(output_dir, "tasks_train_serialized.parquet")
+    test_output = os.path.join(output_dir, "tasks_test_serialized.parquet")
 
     train_df.to_parquet(train_output, index=False)
     test_df.to_parquet(test_output, index=False)
